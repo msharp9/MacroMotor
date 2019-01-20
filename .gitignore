@@ -1,0 +1,13 @@
+# data stores
+train_data/*
+records/*
+model/*
+logs/*
+
+# api library
+python-sc2/*
+
+# test/examples
+examples/*
+*test*
+maze.py
