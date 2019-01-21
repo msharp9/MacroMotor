@@ -3,6 +3,8 @@ train_data/*
 records/*
 model/*
 logs/*
+gifs/*
+replays/*
 
 # api library
 python-sc2/*

@@ -19,7 +19,9 @@ import time
 import os
 from collections import deque
 
+import imageio
 import cv2
+
 import numpy as np
 import pandas as pd
 import keras
@@ -68,14 +70,14 @@ class DDQN_brain():
     sess.run(tf.global_variables_initializer())
 
     def __init__(self, model_path="model/ddqn.h5", record="records/ddqn-record.txt",
-        learning_rate=0.01, reward_decay=0.99, epsilon=0.9, explore=False,):
+        learning_rate=0.01, reward_decay=0.99, epsilon=0.05, explore=False,):
         self.record = record
         self.model_path = model_path
 
         self.lr = learning_rate
         self.gamma = reward_decay
         self.epsilon = epsilon
-        self.epsilon_end = 0.1
+        self.epsilon_end = 0.05
         self.exploration_steps = 1000000.
         if explore:
             self.epsilon_decay_step = (self.epsilon - self.epsilon_end) \
@@ -173,9 +175,10 @@ class DDQN_brain():
 
 
 class DDQN_Bot(DDQN_brain, sc2.BotAI):
-    def __init__(self, action_space=None, title=1, **kwargs):
+    def __init__(self, action_space=None, title=1, gif=False, **kwargs):
         super().__init__(**kwargs)
-
+        self.gif = gif
+        self.gifimages = []
         self.MAX_WORKERS = 50
         self.do_something_after = 0
         self.title = title
@@ -303,6 +306,8 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
         else:
             self.model.save_weights('model/ddqn.h5')
 
+        if self.gif:
+            imageio.mimsave(self.gif, [np.array(img) for i, img in enumerate(self.gifimages) if i%2 == 0], fps=30)
         print(len(self.memory))
         # self.sess.close()
 
@@ -412,6 +417,8 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
             cv2.imshow(str(self.title), resized)
             cv2.waitKey(1)
 
+        if self.gif:
+            self.gifimages.append(self.flipped)
         return self.flipped
         # resized = cv2.resize(self.flipped, dsize=None, fx=0.1, fy=0.1)
         # return ''.join([str(_) for _ in resized.flatten()])
@@ -658,14 +665,18 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
 
 
 if __name__ == "__main__":
-    for episode in range(10):
+    for episode in range(1):
         print('Episode: '+str(episode))
+        if episode%10==0:
+            replay = "replays/ddqn_episode{}.SC2Replay".format(episode)
+        else:
+            replay = "replays/tempreplay.SC2Replay"
         run_game(maps.get("AbyssalReefLE"), [
-            Bot(Race.Protoss, DDQN_Bot(
-                learning_rate=0.05, reward_decay=0.9, epsilon=0.9, title=1)),
+            Bot(Race.Protoss, DDQN_Bot(gif='gifs/example.gif',
+                learning_rate=0.05, reward_decay=0.9, epsilon=0.1, title=1)),
             # Human(Race.Terran),
             # Computer(Race.Protoss, Difficulty.Easy),
             Computer(Race.Protoss, Difficulty.Medium),
-            ], realtime=False)
+            ], realtime=False, save_replay_as=replay)
         time.sleep(5)
     time.sleep(10)
