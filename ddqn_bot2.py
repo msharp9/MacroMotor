@@ -33,7 +33,7 @@ from keras.layers import Dense, Flatten
 from keras.layers.convolutional import Conv2D
 from keras import backend as K
 
-HEADLESS = True
+HEADLESS = False
 
 
 config = tf.ConfigProto()
@@ -204,6 +204,22 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
                         12: self.expand,
                         13: self.do_nothing,
                         14: self.group_up,
+                        }
+        self.choicestext = {0: "build_scout",
+                        1: "build_zealot",
+                        2: "build_gateway",
+                        3: "build_voidray",
+                        4: "build_stalker",
+                        5: "build_worker",
+                        6: "build_assimilator",
+                        7: "build_stargate",
+                        8: "build_pylon",
+                        9: "defend_nexus",
+                        10: "defend_main",
+                        11: "attack_known_enemy_structure",
+                        12: "expand",
+                        13: "do_nothing",
+                        14: "group_up",
                         }
         if action_space:
             self.actions = action_space
@@ -414,11 +430,18 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
 
         if not HEADLESS:
             resized = cv2.resize(self.flipped, dsize=None, fx=2, fy=2)
+            if self.action is not None:
+                cv2.putText(resized, self.choicestext[self.action], (200, 20),
+                    cv2.FONT_HERSHEY_PLAIN, 1.6, (255,255,255), 2, cv2.LINE_AA)
             cv2.imshow(str(self.title), resized)
             cv2.waitKey(1)
 
         if self.gif:
-            self.gifimages.append(self.flipped)
+            gifpic = self.flipped
+            if self.action is not None:
+                cv2.putText(gifpic, self.choicestext[self.action], (100, 10),
+                    cv2.FONT_HERSHEY_PLAIN, 0.8, (255,255,255), 1, cv2.LINE_AA)
+            self.gifimages.append(gifpic)
         return self.flipped
         # resized = cv2.resize(self.flipped, dsize=None, fx=0.1, fy=0.1)
         # return ''.join([str(_) for _ in resized.flatten()])
