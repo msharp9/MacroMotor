@@ -20,7 +20,9 @@ import datetime
 import os
 from collections import deque
 
+import imageio
 import cv2
+
 import numpy as np
 import pandas as pd
 import keras
@@ -32,8 +34,7 @@ from keras.layers import Dense, Flatten
 from keras.layers.convolutional import Conv2D
 from keras import backend as K
 
-HEADLESS = True
-# HEADLESS = False
+HEADLESS = False
 
 
 config = tf.ConfigProto()
@@ -175,9 +176,10 @@ class DDQN_brain():
 
 
 class DDQN_Bot(DDQN_brain, sc2.BotAI):
-    def __init__(self, action_space=None, title=1, **kwargs):
+    def __init__(self, action_space=None, title=1, gif=False, **kwargs):
         super().__init__(**kwargs)
-
+        self.gif = gif
+        self.gifimages = []
         self.MAX_WORKERS = 50
         self.do_something_after = 0
         self.title = title
@@ -203,6 +205,22 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
                         12: self.expand,
                         13: self.do_nothing,
                         14: self.group_up,
+                        }
+        self.choicestext = {0: "build_scout",
+                        1: "build_zealot",
+                        2: "build_gateway",
+                        3: "build_voidray",
+                        4: "build_stalker",
+                        5: "build_worker",
+                        6: "build_assimilator",
+                        7: "build_stargate",
+                        8: "build_pylon",
+                        9: "defend_nexus",
+                        10: "defend_main",
+                        11: "attack_known_enemy_structure",
+                        12: "expand",
+                        13: "do_nothing",
+                        14: "group_up",
                         }
         if action_space:
             self.actions = action_space
@@ -305,6 +323,8 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
         else:
             self.model.save_weights('model/ddqn.h5')
 
+        if self.gif:
+            imageio.mimsave(self.gif, [np.array(img) for i, img in enumerate(self.gifimages) if i%2 == 0], fps=30)
         print(len(self.memory))
         # self.sess.close()
 
@@ -411,9 +431,18 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
 
         if not HEADLESS:
             resized = cv2.resize(self.flipped, dsize=None, fx=2, fy=2)
+            if self.action is not None:
+                cv2.putText(resized, self.choicestext[self.action], (200, 20),
+                    cv2.FONT_HERSHEY_PLAIN, 1.6, (255,255,255), 2, cv2.LINE_AA)
             cv2.imshow(str(self.title), resized)
             cv2.waitKey(1)
 
+        if self.gif:
+            gifpic = self.flipped
+            if self.action is not None:
+                cv2.putText(gifpic, self.choicestext[self.action], (100, 10),
+                    cv2.FONT_HERSHEY_PLAIN, 0.8, (255,255,255), 1, cv2.LINE_AA)
+            self.gifimages.append(gifpic)
         return self.flipped
         # resized = cv2.resize(self.flipped, dsize=None, fx=0.1, fy=0.1)
         # return ''.join([str(_) for _ in resized.flatten()])
@@ -669,7 +698,7 @@ if __name__ == "__main__":
         else:
             replay = "replays/tempreplay.SC2Replay"
         run_game(maps.get("AbyssalReefLE"), [
-            Bot(Race.Protoss, DDQN_Bot(
+            Bot(Race.Protoss, DDQN_Bot(gif='gifs/example.gif',
                 learning_rate=0.1, reward_decay=0.9, epsilon=0.95-0.9*(episode%2), title=1)),
             # Human(Race.Terran),
             # Computer(Race.Protoss, Difficulty.Easy),
