@@ -16,6 +16,7 @@ from examples.zerg.zerg_rush import ZergRushBot
 import math
 import random
 import time
+import datetime
 import os
 from collections import deque
 
@@ -32,6 +33,7 @@ from keras.layers.convolutional import Conv2D
 from keras import backend as K
 
 HEADLESS = True
+# HEADLESS = False
 
 
 config = tf.ConfigProto()
@@ -42,7 +44,7 @@ config.gpu_options.per_process_gpu_memory_fraction = 0.6
 # print(dir(Difficulty))
 
 class DDQN_brain():
-    memory = deque(maxlen=100000)
+    memory = deque(maxlen=30000)
     global_step = 0
     state_size = (176, 200, 4)
     action_size = 15
@@ -68,14 +70,14 @@ class DDQN_brain():
     sess.run(tf.global_variables_initializer())
 
     def __init__(self, model_path="model/ddqn.h5", record="records/ddqn-record.txt",
-        learning_rate=0.01, reward_decay=0.99, epsilon=0.9, explore=False,):
+        learning_rate=0.01, reward_decay=0.99, epsilon=0.05, explore=False,):
         self.record = record
         self.model_path = model_path
 
         self.lr = learning_rate
         self.gamma = reward_decay
         self.epsilon = epsilon
-        self.epsilon_end = 0.1
+        self.epsilon_end = 0.05
         self.exploration_steps = 1000000.
         if explore:
             self.epsilon_decay_step = (self.epsilon - self.epsilon_end) \
@@ -84,8 +86,8 @@ class DDQN_brain():
             self.epsilon_decay_step = 0
 
         # parameters about training
-        self.batch_size = 32
-        self.train_start = 50000
+        self.batch_size = 128
+        self.train_start = 5000
         self.update_target_rate = 10000
         self.no_op_steps = 30
 
@@ -658,14 +660,20 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
 
 
 if __name__ == "__main__":
-    for episode in range(10):
+    for episode in range(100):
         print('Episode: '+str(episode))
+        print('Epsilon: '+str(0.95-0.9*(episode%2)))
+        print(datetime.datetime.now())
+        if episode%10==0:
+            replay = "replays/ddqn_episode{}.SC2Replay".format(episode)
+        else:
+            replay = "replays/tempreplay.SC2Replay"
         run_game(maps.get("AbyssalReefLE"), [
             Bot(Race.Protoss, DDQN_Bot(
-                learning_rate=0.05, reward_decay=0.9, epsilon=0.9, title=1)),
+                learning_rate=0.1, reward_decay=0.9, epsilon=0.95-0.9*(episode%2), title=1)),
             # Human(Race.Terran),
             # Computer(Race.Protoss, Difficulty.Easy),
             Computer(Race.Protoss, Difficulty.Medium),
-            ], realtime=False)
+            ], realtime=False, save_replay_as=replay)
         time.sleep(5)
     time.sleep(10)
