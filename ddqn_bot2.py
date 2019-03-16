@@ -65,6 +65,7 @@ class DDQN_brain():
     # init global models
     model = build_model(state_size, action_size)
     target_model = build_model(state_size, action_size)
+    last_conv2d_layername = 'conv2d_3'
 
     sess = tf.InteractiveSession(config=config)
     K.set_session(sess)
@@ -134,6 +135,36 @@ class DDQN_brain():
     def replay_memory(self, s, a, r, s_, end):
         self.memory.append((s, a, r, s_, end))
 
+    def grad_cam_heatmap(self, action, history):
+        model_output = self.model.output[:,action]
+        last_conv_layer = self.model.get_layer(self.last_conv2d_layername)
+
+        grads = K.gradients(model_output,last_conv_layer.output)[0]
+        pooled_grads = K.mean(grads, axis=(0,1,2))
+        iterate = K.function([self.model.input, K.learning_phase()],
+            [pooled_grads, last_conv_layer.output[0]])
+
+        pooled_grads_value, conv_layer_output_value = iterate([history, 0])
+
+        for i, pgv in enumerate(pooled_grads_value):
+            conv_layer_output_value[:,:,i] *= pgv
+
+        heatmap = np.mean(conv_layer_output_value, axis=-1)
+        # heatmap = np.absolute(heatmap)
+        heatmap = np.maximum(heatmap,0)
+        heatmap /= np.max(heatmap) + 0.00000001
+
+        heatmap = np.uint8(255*heatmap)
+        heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+        return heatmap
+
+    def merge_heatmap(self, img, heatmap):
+        heatmap = cv2.resize(heatmap, (img.shape[1],img.shape[0]))
+        img = cv2.cvtColor(img,cv2.COLOR_GRAY2RGB)
+        superimposed_img = heatmap*0.4 + img
+        return superimposed_img
+
+
     # pick samples randomly from replay memory (with batch_size)
     def train_replay(self):
         if len(self.memory) < self.train_start:
@@ -176,10 +207,12 @@ class DDQN_brain():
 
 
 class DDQN_Bot(DDQN_brain, sc2.BotAI):
-    def __init__(self, action_space=None, title=1, gif=False, **kwargs):
+    def __init__(self, action_space=None, title=1, gif=False, grad_cam=False,
+            **kwargs):
         super().__init__(**kwargs)
         self.gif = gif
         self.gifimages = []
+        self.grad_cam = grad_cam
         self.do_something_after = 0
         self.title = title
         self.scouts_and_spots = {}
@@ -324,16 +357,16 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
         self.train_replay()
         self.global_step += 1
 
-        with open(self.record,"a") as f:
-            #Model, Result, Time, Reward, Steps, avg_q_max, avg_loss
-            f.write("{}, {}, {}, {}, {}, {}, {}\n".format(self.model, game_result,
-                int(time.time()), self.tot_reward, self.time,
-                self.avg_q_max/self.time, self.avg_loss/self.time))
-
-        if self.model_path:
-            self.model.save_weights(self.model_path)
-        else:
-            self.model.save_weights('model/ddqn.h5')
+        # with open(self.record,"a") as f:
+        #     #Model, Result, Time, Reward, Steps, avg_q_max, avg_loss
+        #     f.write("{}, {}, {}, {}, {}, {}, {}\n".format(self.model, game_result,
+        #         int(time.time()), self.tot_reward, self.time,
+        #         self.avg_q_max/self.time, self.avg_loss/self.time))
+        #
+        # if self.model_path:
+        #     self.model.save_weights(self.model_path)
+        # else:
+        #     self.model.save_weights('model/ddqn.h5')
 
         if self.gif:
             imageio.mimsave(self.gif, [np.array(img) for i, img in enumerate(self.gifimages) if i%2 == 0], fps=30)
@@ -446,15 +479,22 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
             if self.action is not None:
                 cv2.putText(resized, self.choicestext[self.action], (200, 20),
                     cv2.FONT_HERSHEY_PLAIN, 1.6, (255,255,255), 2, cv2.LINE_AA)
+                if self.grad_cam:
+                    heatmap = self.grad_cam_heatmap(self.action, self.history)
+                    resized = self.merge_heatmap(resized, heatmap)
             cv2.imshow(str(self.title), resized)
             cv2.waitKey(1)
 
         if self.gif:
-            gifpic = self.flipped
+            gifpic = self.flipped.copy()
             if self.action is not None:
                 cv2.putText(gifpic, self.choicestext[self.action], (100, 10),
                     cv2.FONT_HERSHEY_PLAIN, 0.8, (255,255,255), 1, cv2.LINE_AA)
+                if self.grad_cam:
+                    heatmap = self.grad_cam_heatmap(self.action, self.history)
+                    gifpic = self.merge_heatmap(gifpic, heatmap)
             self.gifimages.append(gifpic)
+
         return self.flipped
         # resized = cv2.resize(self.flipped, dsize=None, fx=0.1, fy=0.1)
         # return ''.join([str(_) for _ in resized.flatten()])

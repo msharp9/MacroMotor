@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-RECORD = "records/ddqn-record2.txt"
+RECORD = "records/ddqn-record_2000.txt"
 
 df = pd.read_csv(RECORD, names=['model', 'result', 'time', 'tot_reward',
     'steps', 'avg_q_max', 'avg_loss'])
