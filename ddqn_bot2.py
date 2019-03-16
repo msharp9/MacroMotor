@@ -34,11 +34,11 @@ from keras.layers import Dense, Flatten
 from keras.layers.convolutional import Conv2D
 from keras import backend as K
 
-HEADLESS = False
+HEADLESS = True
 
 
 config = tf.ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction = 0.6
+config.gpu_options.per_process_gpu_memory_fraction = 0.8
 # session = tf.InteractiveSession(config=config)
 
 # print(Difficulty)
@@ -88,7 +88,7 @@ class DDQN_brain():
 
         # parameters about training
         self.batch_size = 128
-        self.train_start = 5000
+        self.train_start = 10000
         self.update_target_rate = 10000
         self.no_op_steps = 30
 
@@ -180,14 +180,15 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
         super().__init__(**kwargs)
         self.gif = gif
         self.gifimages = []
-        self.MAX_WORKERS = 50
         self.do_something_after = 0
         self.title = title
         self.scouts_and_spots = {}
 
-        self.probes_per_nexus = random.randint(12,24)
-        self.supply_ratio = random.uniform(0,0.3)
-        self.critical_army_size = random.randint(50,190)
+        self.max_workers = random.randint(60,100)
+        self.probes_per_nexus = random.randint(18,23)
+        self.supply_ratio = random.uniform(0.05,0.2)
+        self.critical_army_size = random.randint(100,150)
+        print(self.max_workers,self.probes_per_nexus,self.supply_ratio,self.critical_army_size)
 
         # ADDED THE CHOICES #
         self.choices = {0: self.build_scout,
@@ -248,16 +249,20 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
             if len(self.units(NEXUS))*self.probes_per_nexus > len(self.units(PROBE)):
                 worker_weight = 10
             else:
-                expand_weight = 10
+                expand_weight = 20
+            if len(self.units(PROBE)) > self.max_workers:
+                worker_weight = 1
+            if len(self.units(NEXUS)) < 2:
+                expand_weight *= 2
 
             if self.supply_left/self.supply_cap < self.supply_ratio:
-                pylon_weight = 10
+                pylon_weight = 5
             else:
                 pylon_weight = 1
-            if self.supply_cap == 200:
+            if self.supply_cap >= 175:
                 pylon_weight = 1
-            stargate_weight = 1
-            gateway_weight = 1
+            stargate_weight = 3
+            gateway_weight = 2
 
             zealot_weight = 1
             voidray_weight = 1
@@ -268,15 +273,22 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
             if(self.units(NEXUS)):
                 if self.known_enemy_units.closer_than(20, random.choice(self.units(NEXUS))):
                     defend_weight = 2
-                if self.supply_used > self.critical_army_size:
-                    attack_weight = 20
-                else:
-                    defend_weight = defend_weight * 10
-                    zealot_weight = 5
-                    stalker_weight = 20
-                    voidray_weight = 30
 
-            choice_weights = 1*[0]+zealot_weight*[1]+gateway_weight*[2]+voidray_weight*[3]+stalker_weight*[4]+worker_weight*[5]+1*[6]+stargate_weight*[7]+pylon_weight*[8]+defend_weight*[9]+1*[10]+attack_weight*[11]+expand_weight*[12]+1*[13]+1*[14]
+            if self.supply_used > self.critical_army_size:
+                attack_weight = 20
+            else:
+                defend_weight *= 10
+
+            if(self.units(STARGATE)):
+                stargate_weight *=2
+                gateway_weight = 1
+                voidray_weight *= 30
+            else:
+                gateway_weight *= 2
+                zealot_weight *= 7
+                stalker_weight *= 23
+
+            choice_weights = 1*[0]+zealot_weight*[1]+gateway_weight*[2]+voidray_weight*[3]+stalker_weight*[4]+worker_weight*[5]+1*[6]+stargate_weight*[7]+pylon_weight*[8]+defend_weight*[9]+1*[10]+attack_weight*[11]+expand_weight*[12]+1*[13]+5*[14]
             # print(choice_weights)
             action = random.choice(choice_weights)
         return action
@@ -334,9 +346,9 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
         if unit_tag in self.enemy_units:
             self.reward += 1
         if unit_tag in self.friendly_buildings:
-            self.reward -= 100
+            self.reward -= 0
         if unit_tag in self.friendly_units:
-            self.reward -= 1
+            self.reward -= 0
 
     async def log_enemy_units(self):
         for unit in self.known_enemy_units:
@@ -616,10 +628,16 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
                     await self.build(STARGATE, near=pylon)
 
     async def build_pylon(self):
-            nexuses = self.units(NEXUS).ready
-            if nexuses.exists:
-                if self.can_afford(PYLON):
-                    await self.build(PYLON, near=self.units(NEXUS).first.position.towards(self.game_info.map_center, 5))
+        nexuses = self.units(NEXUS).ready
+        if nexuses.exists:
+            if self.can_afford(PYLON):
+                await self.build(PYLON, near=self.units(NEXUS).first.position.towards(self.game_info.map_center, 5))
+        if self.supply_left/self.supply_cap < self.supply_ratio:
+            self.reward += 1
+        else:
+            self.reward -= 1
+        if self.supply_cap == 200:
+            self.reward -= 5
 
     async def expand(self):
         try:
@@ -693,16 +711,19 @@ if __name__ == "__main__":
         print('Episode: '+str(episode))
         print('Epsilon: '+str(0.95-0.9*(episode%2)))
         print(datetime.datetime.now())
+        # HEADLESS = not episode%2
         if episode%10==0:
             replay = "replays/ddqn_episode{}.SC2Replay".format(episode)
         else:
             replay = "replays/tempreplay.SC2Replay"
         run_game(maps.get("AbyssalReefLE"), [
             Bot(Race.Protoss, DDQN_Bot(gif='gifs/example.gif',
+                # learning_rate=0.1, reward_decay=0.9, epsilon=0.95, title=1)),
                 learning_rate=0.1, reward_decay=0.9, epsilon=0.95-0.9*(episode%2), title=1)),
             # Human(Race.Terran),
             # Computer(Race.Protoss, Difficulty.Easy),
-            Computer(Race.Protoss, Difficulty.Medium),
-            ], realtime=False, save_replay_as=replay)
+            Computer(Race.Protoss, Difficulty.Hard),
+            ], realtime=False)
+            # ], realtime=False, save_replay_as=replay)
         time.sleep(5)
     time.sleep(10)
