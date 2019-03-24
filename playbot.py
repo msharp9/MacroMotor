@@ -2,7 +2,7 @@
 
 import sc2
 from sc2 import run_game, maps, Race, Difficulty, position, Result
-from sc2.player import Bot, Computer
+from sc2.player import Bot, Computer, Human
 from sc2.constants import NEXUS, PROBE, PYLON, ASSIMILATOR, GATEWAY,\
     CYBERNETICSCORE, STALKER, STARGATE, VOIDRAY, OBSERVER, ROBOTICSFACILITY,\
     ZEALOT
@@ -36,9 +36,8 @@ from keras import backend as K
 
 HEADLESS = True
 
-
 config = tf.ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction = 0.6
+config.gpu_options.per_process_gpu_memory_fraction = 0.4
 # session = tf.InteractiveSession(config=config)
 
 # print(Difficulty)
@@ -64,7 +63,7 @@ class DDQN_brain():
 
     # init global models
     model = build_model(state_size, action_size)
-    target_model = build_model(state_size, action_size)
+    # target_model = build_model(state_size, action_size)
     last_conv2d_layername = 'conv2d_3'
 
     sess = tf.InteractiveSession(config=config)
@@ -93,7 +92,7 @@ class DDQN_brain():
         self.update_target_rate = 10000
         self.no_op_steps = 30
 
-        self.update_target_model()
+        # self.update_target_model()
         self.optimizer = self.optimizer()
         if self.model_path and os.path.isfile(self.model_path):
             self.model.load_weights(self.model_path)
@@ -221,7 +220,6 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
         self.probes_per_nexus = random.randint(18,23)
         self.supply_ratio = random.uniform(0.05,0.2)
         self.critical_army_size = random.randint(100,150)
-        print(self.max_workers,self.probes_per_nexus,self.supply_ratio,self.critical_army_size)
 
         # ADDED THE CHOICES #
         self.choices = {0: self.build_scout,
@@ -261,13 +259,6 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
         else:
             self.actions = [str(c) for c in self.choices]
         self.action_size = len(self.actions)
-
-        self.probe_reward = 12
-
-        self.friendly_units = set()
-        self.friendly_buildings = set()
-        self.enemy_units = set()
-        self.enemy_buildings = set()
 
     def choose_action(self, history):
         history = np.float32(history / 255.0)
@@ -328,138 +319,34 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
             action = random.choice(choice_weights)
         return action
 
-    # def on_start(self):
-    #     self.state_size = (self.game_info.map_size[1], self.game_info.map_size[0], 4)
-    #     print(self.state_size)
-    #     # build
-    #     self.model = self.build_model()
-    #     self.target_model = self.build_model()
-    #     self.update_target_model()
-    #     self.optimizer = self.optimizer()
-    #     self.sess = tf.InteractiveSession(config=config)
-    #     K.set_session(self.sess)
-    #     self.sess.run(tf.global_variables_initializer())
-    #
-    #     if self.model_path and os.path.isfile(self.model_path):
-    #         self.model.load_weights(self.model_path)
-    #     print(len(self.memory))
-
-
+    def on_start(self):
+        print('--- on_start called ---')
 
     def on_end(self, game_result):
         print('--- on_end called ---')
         print(game_result, self.model)
 
-        if(game_result == Result.Defeat):
-            self.replay_memory(self._history,self.action,-10000,self.history,True)
-            self.tot_reward += -10000
-        else:
-            self.replay_memory(self._history,self.action,10000,self.history,True)
-            self.tot_reward += 10000
-        self.train_replay()
-        self.global_step += 1
-
-        # with open(self.record,"a") as f:
-        #     #Model, Result, Time, Reward, Steps, avg_q_max, avg_loss
-        #     f.write("{}, {}, {}, {}, {}, {}, {}\n".format(self.model, game_result,
-        #         int(time.time()), self.tot_reward, self.time,
-        #         self.avg_q_max/self.time, self.avg_loss/self.time))
-        #
-        # if self.model_path:
-        #     self.model.save_weights(self.model_path)
-        # else:
-        #     self.model.save_weights('model/ddqn.h5')
-
         if self.gif:
             imageio.mimsave(self.gif, [np.array(img) for i, img in enumerate(self.gifimages) if i%2 == 0], fps=30)
-        print(len(self.memory))
-        # self.sess.close()
 
-    async def on_unit_destroyed(self, unit_tag):
-        if unit_tag in self.enemy_buildings:
-            self.reward += 100
-        if unit_tag in self.enemy_units:
-            self.reward += 0
-        if unit_tag in self.friendly_buildings:
-            self.reward -= 0
-        if unit_tag in self.friendly_units:
-            self.reward -= 0
-
-    async def on_unit_created(self, unit):
-        if unit.name == 'Probe':
-            if len(self.units(PROBE)) == self.probe_reward:
-                self.reward += 1
-                self.probe_reward += 1
-                if self.probe_reward > 30:
-                    self.probe_reward += 200
-                print(self.probe_reward)
-            elif len(self.units(PROBE)) > 100:
-                self.reward -= 1
-        elif unit.name == 'Stalker':
-            if len(self.units(STALKER)) < 5:
-                self.reward += 1
-        elif unit.name == 'VoidRay':
-            self.reward += 1
-
-    async def on_building_construction_complete(self, unit):
-        if unit.name == 'Nexus':
-            print('Nexus')
-            if len(self.units(NEXUS)) < 2:
-                self.reward += 50
-        elif unit.name == 'Gateway':
-            if len(self.units(GATEWAY)) < 1:
-                self.reward += 10
-        elif unit.name == 'Stargate':
-            if len(self.units(STARGATE)) < 1:
-                self.reward += 10
-        elif unit.name == 'Pylon':
-            if self.supply_left/self.supply_cap < self.supply_ratio:
-                self.reward += 1
-            else:
-                self.reward -= 1
-            if self.supply_cap == 200:
-                self.reward -= 5
-
-    async def log_enemy_units(self):
-        for unit in self.known_enemy_units:
-            if unit.is_structure:
-                self.enemy_buildings.add(unit.tag)
-            else:
-                self.enemy_units.add(unit.tag)
-
-        for unit in self.units():
-            if unit.is_structure:
-                self.friendly_buildings.add(unit.tag)
-            else:
-                self.friendly_units.add(unit.tag)
 
     async def on_step(self, iteration):
         # self.time = (self.state.game_loop/22.4) / 60
         #print('Time:',self.time)
         await self.distribute_workers()
         await self.scout()
-        await self.log_enemy_units()
         await self.chronoboost()
 
         _observation = self.intel()
         if self.action is not None:
             _observation = np.reshape([_observation], (1, self.game_info.map_size[1], self.game_info.map_size[0], 1))
             _history = np.append(_observation, self.history[:,:,:,:3], axis=3)
-            self.replay_memory(self.history, self.action, self.reward, _history, False)
-            self.train_replay()
-            self.tot_reward += self.reward
-            self.reward = -1 # penalize longer games
-            self.global_step += 1
-            if self.global_step % self.update_target_rate == 0:
-                self.update_target_model()
         else:
             _history = np.stack((_observation, _observation, _observation, _observation), axis=2)
             _history = np.reshape([_history], (1, self.game_info.map_size[1], self.game_info.map_size[0], 4))
         self._history = self.history
         self.history = _history
         self.action = self.choose_action(_history)
-
-        self.avg_q_max += np.amax(self.model.predict(np.float32(self.history/255.))[0])
 
         try:
             await self.choices[int(self.action)]()
@@ -779,23 +666,18 @@ class DDQN_Bot(DDQN_brain, sc2.BotAI):
 
 if __name__ == "__main__":
     for episode in range(1):
-        print('Episode: '+str(episode))
-        # print('Epsilon: '+str(0.95-0.9*(episode%2)))
         print(datetime.datetime.now())
-        # HEADLESS = not episode%2
-        if episode%10==0:
-            replay = "replays/ddqn_episode{}.SC2Replay".format(episode)
-        else:
-            replay = "replays/tempreplay.SC2Replay"
+        replay = "replays/humanreplay.SC2Replay"
         run_game(maps.get("AbyssalReefLE"), [
-            Bot(Race.Protoss, DDQN_Bot(model_path='model/ddqn.h5',
-                # gif='gifs/example.gif', grad_cam=True,
-                learning_rate=0.1, reward_decay=0.9, epsilon=0.05, title=1)),
-                # learning_rate=0.1, reward_decay=0.9, epsilon=0.95-0.9*(episode%2), title=1)),
-            # Human(Race.Terran),
+            Human(Race.Protoss),
+            Bot(Race.Protoss, DDQN_Bot(model_path='model/ddqn_2000.h5',
+                # gif='gifs/example.gif',
+                #grad_cam=True,
+                epsilon=0.05, title=1)),
+            # Bot(Race.Protoss, WarpGateBot()),
+            # Bot(Race.Zerg, ZergRushBot()),
             # Computer(Race.Protoss, Difficulty.Easy),
-            Computer(Race.Protoss, Difficulty.Hard),
-            ], realtime=False)
-            # ], realtime=False, save_replay_as=replay)
+            # Computer(Race.Protoss, Difficulty.Hard),
+            ], realtime=True, save_replay_as=replay)
         time.sleep(5)
     time.sleep(10)

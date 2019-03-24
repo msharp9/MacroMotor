@@ -14,7 +14,7 @@ print(df.head())
 dfwin = df[df['result'] == 'Result.Victory']
 dfloss = df[df['result'] == 'Result.Defeat']
 
-
+print(df.steps.sum())
 
 xaxis = ['index']
 yaxis = ['tot_reward', 'steps', 'avg_q_max', 'avg_loss']
